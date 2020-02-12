@@ -1,0 +1,4 @@
+6.54545 /static/anchor/tid2013/i09_09_1.bmp
+4.94286 /static/anchor/tid2013/i11_08_1.bmp
+3.18919 /static/anchor/tid2013/i12_07_4.bmp
+1.75000 /static/anchor/tid2013/i14_09_5.bmp

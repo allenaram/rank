@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>演示</title>
+    <script type="text/javascript" src="/static/js/jquery.min.js"></script>
+    <!--script type="text/javascript" src="/static/js/bootstrap.js"></script>
+	<script type="text/javascript" src="/static/js/bootstrap.min.js"></script-->
+    <!--Import Google Icon Font-->    
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <!--Import materialize.css-->
+    <link type="text/css" rel="stylesheet" href="static/css/materialize.min.css"  media="screen,projection"/>
+    <!--Let browser know website is optimized for mobile-->
+    <link type="text/css" rel="stylesheet" href="static/css/mycss.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+</head>
+
+<body>
+<main role="main">
+    <div class="container">
+        <div class="row">
+            <div class="col s6">
+                <div class="card-panel indigo lighten-5">
+                    
+                    <div style="text-align:center">
+                        <h1 id="img-title" > 图片名 </h1>
+                    </div>
+                    <div style="text-align:center;">                    
+                        <img src="/static/images/fl.png" id="img_show" style="width: 300px;height: 300px;">
+                        <br/> 
+                    </div> 
+                    <div>                    
+                         <div class="row">
+                            <div class="col s12">
+                                <a class="waves-effect waves-light btn" id="get_score_btn">获得分数</a>    
+                                <div class="input-field inline">
+                                    <input disabled id="score_text" type="text" class="validate">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col s6">
+                <div class="card-panel indigo lighten-5">
+
+                    <div style="text-align:center">
+                        <h1 id="img2-title" > 图片名2 </h1>
+                    </div>
+                    <div style="text-align:center;">
+                        <img src="/static/images/fl.png" id="img2_show" style="width: 300px;height: 300px;">
+                        <br/>
+                    </div>
+                    <div>
+                         <div class="row">
+                            <div class="col s12">
+                                <div class="input-field inline">
+                                    <input disabled id="score_text2" type="text" class="validate">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col s4">
+                <form id="upload_video_form" action="/upload_image" method='post' enctype="multipart/form-data">
+                    <div class="file-field input-field">
+                        <div class="btn" id="upload_file_btn">
+                            <span>上传图片</span>
+                            <input type="file" id='upload_image_file' name="Myfile" >
+                        </div>
+                        <div class="file-path-wrapper">
+                            <input class="file-path validate" placeholder='请选择要上传的图片' id='upload_image_name' type="text" onchange="file_changed()">
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script type="text/javascript" src="/static/js/materialize.min.js"></script>
+<script type="text/javascript" src="/static/js/sprintf-0.7-beta1.js"></script>
+<script>
+var img_dir = '';
+$(document).ready(function(){
+    $('#get_score_btn').click(click_score_btn);
+});
+
+function file_changed()
+{
+    var formData = new FormData();
+    var img_name = document.getElementById("img-title");
+    formData.append('file', $('#upload_image_file')[0].files[0]);
+
+    $.ajax({
+    url: '/upload_image',
+    type: 'POST',
+    data: formData,
+    async:false,
+    cache: false,
+    processData: false,
+    contentType: false,
+    success: function(data){
+        if(data['result'] == 'ok'){
+            alert("上传成功");
+            var img_src = '/static/XZL_Download/' + data['filepath'] + '/' + data['filename'];
+            document.getElementById("img_show").src=img_src;
+            img_name.innerText = data['filename'].substr(0,data['filename'].indexOf('.'));
+            var Btn = document.getElementById("get_score_btn");
+            Btn.className = "waves-effect waves-light btn"
+            var score_text = document.getElementById("score_text");
+            score_text.value = 0;
+
+            var score_text2 = document.getElementById("score_text2");
+            score_text2.value = '';
+            var img2 = document.getElementById("img2_show");
+            img2.src = '/static/images/fl.png';
+            var img2_name = document.getElementById("img2-title");
+            img2_name.innerHTML = '锚点图';
+
+        }
+        else{
+            alert("上传失败");
+        }
+    }
+    });
+}
+
+function click_score_btn()
+{
+    var img_src = document.getElementById("img_show").src;
+    var formData = new FormData();
+    formData.append('src', img_src);
+    $.ajax({
+        url: '/calculate_score',
+        type: 'POST',
+        data: formData,
+        async:false,
+        cache: false,
+        processData: false,
+        contentType: false,
+        success: function(data){
+            if(data['result'] == 'ok')
+            {
+                var score_text = document.getElementById("score_text");
+                score_text.value = data['score'];
+                var score_text2 = document.getElementById("score_text2");
+                score_text2.value = data['extra_text'];
+                var img2 = document.getElementById("img2_show");
+                img2.src = data['second_img_path'];
+                var img2_name = document.getElementById("img2-title");
+                img2_name.innerHTML = data['second_img_name'];
+                 if (data['isEnd'] == 1)
+                 {
+                      var Btn = document.getElementById("get_score_btn");
+                      Btn.className = ""
+                 }
+
+
+            }
+        }
+    })
+}
+</script> 
+</body>
+</html>

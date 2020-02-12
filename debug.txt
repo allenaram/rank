@@ -1,0 +1,5 @@
+
+## somedebug method 
+
+- one trian.sh scripts: 注意pycharm和cmd下相对路径的区别;(os.path.abspath); 包的导入;
+- 
