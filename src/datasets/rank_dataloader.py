@@ -5,7 +5,7 @@ import random
 
 class Dataset():
 
-    def __init__(self, param_str):
+    def __init__(self, param_str, isFineTuning = False):
 
         # === 读取输入参数 ===
         # 字典输入.
@@ -22,6 +22,7 @@ class Dataset():
             self._roidb.append(i.split()[1].lower())
 
         self.num = 0
+        self.isFineTuning = isFineTuning
 
     def _get_next_minibatch_inds(self):
         # mini_batch = level * dis_mini * batch
@@ -42,6 +43,25 @@ class Dataset():
         db_inds = np.asarray(db_inds)
         return db_inds
 
+    def _get_next_minibatch_inds_ft(self):
+        # mini_batch = level * dis_mini * batch
+        sampleTarget = [i for i in range(1125)]
+        db_inds = []
+        dis = 9  # 失真类型数量
+        batch = 1  # 一个minibatch中原图的数量
+        level = 5  # 失真等级数量
+        Num = len(self.scores) / dis / level  # 原图数量
+        for k in range(dis):
+            idxList = random.sample(sampleTarget, level)
+            idxList.sort()
+            idxList.reverse()
+            db_inds += idxList
+        self.num = self.num + batch
+        if Num - self.num < batch:
+            self.num = 0
+        db_inds = np.asarray(db_inds)
+        return db_inds
+
     def get_minibatch(self, minibatch_db):
         # 给定一个roidb，构建一个从中取样的小批量
         jobs = [preprocess('E:/database/tid2013/distorted_images/'+i) for i in minibatch_db]
@@ -56,7 +76,7 @@ class Dataset():
 
     def next_batch(self):
         # 获取blob
-        db_inds = self._get_next_minibatch_inds()
+        db_inds = self._get_next_minibatch_inds_ft() if self.isFineTuning else self._get_next_minibatch_inds()
         minibatch_db = []
         for i in range(len(db_inds)):
             minibatch_db.append(self._roidb[int(db_inds[i])])

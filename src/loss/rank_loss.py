@@ -6,7 +6,7 @@ class Rank_loss():
     # Layer of Efficient Siamese loss function
 
     def __init__(self):
-        self.margin = 10
+        self.margin = 5
         self.parasCreated = False
         self.fc1 = []
         self.fc2 = []
@@ -64,7 +64,7 @@ class Rank_loss():
         loss = tf.reduce_mean(self.loss)
 
         self.dis2 = tf.cast(tf.reshape(self.dis2, [-1]), tf.float32)
-        diff2 = self.dis2 - tf.cast(self.margin, tf.float32)
+        diff2 = tf.cast(self.margin, tf.float32) + self.dis2
         self.loss2 = tf.maximum(0., diff2)
         loss += tf.reduce_mean(self.loss2)
         return loss

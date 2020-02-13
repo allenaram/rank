@@ -24,7 +24,7 @@ ALLOWED_EXTENSIONS = set(['jpg', 'png', 'jpeg', 'bmp'])#文件允许上传格式
 anchor_path = [line.rstrip('\n').split(' ')[1] for line in open("F:/PycharmProjects/rank/framework/static/anchor/tid2013/tid2013.txt")]
 anchor_score = [line.rstrip('\n').split(' ')[0] for line in open("F:/PycharmProjects/rank/framework/static/anchor/tid2013/tid2013.txt")]
 anchor_index = 0
-anchor_num = 4
+anchor_num = 21
 
 
 def allowed_file(filename):  # 通过将文件名分段的方式查询文件格式是否在允许上传格式范围之内

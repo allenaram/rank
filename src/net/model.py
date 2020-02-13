@@ -472,3 +472,9 @@ class ResNet50(object):
 
     def load_original_weights(self, session,ckpt_path, saver, skip_layers=[]):
         saver.restore(session, ckpt_path)
+
+
+class InceptionV3(object):
+    def __init__(self, num_classes=1000, dropout_keep_prob=0.5):
+        self.num_classes = num_classes
+        self.dropout_keep_prob = dropout_keep_prob

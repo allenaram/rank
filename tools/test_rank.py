@@ -12,17 +12,19 @@ from src.net.model import ResNet50
 from src.loss.rank_loss import Rank_loss
 import matplotlib.pyplot as plt
 
-modelName = "VGG16"
+modelName = "ResNet50"
 modelDict = {
     "VGG16" : VggNetModel_NewVer,
-    "ResNet50" : ResNet50
+    "ResNet50" : ResNet50,
+    "test" : ResNet50
 }
 ckptPath = {
     "VGG16" : "../experiments/tid2013_vgg16_hingeLoss/rankiqa/model.ckpt-9999",
-    "ResNet50" : "../experiments/tid2013_resnet50_hingeLoss/rankiqa/model.ckpt-9999"
+    "ResNet50" : "../experiments/tid2013_resnet50_hingeLoss/rankiqa/model.ckpt-9999",
+    "test" : "../experiments/tid2013/rankiqa/model.ckpt-9999"
 }
 
-image = tf.placeholder(tf.float32,[2,224,224,3])
+image = tf.placeholder(tf.float32,[None,224,224,3])
 dropout_keep_prob = tf.placeholder(tf.float32)
 
 model = modelDict[modelName](num_classes=1, dropout_keep_prob=dropout_keep_prob)
@@ -48,7 +50,6 @@ def get_pic(filename, sess):
     # input = img3.eval()
     return input
 
-
 def calculate_file1(filename1):
     global image1
     #filename1 = r"E:\database\tid2013\distorted_images\i01_01_4.bmp"
@@ -62,9 +63,6 @@ def calculate_file2(filename2):
     inputs = np.concatenate([image1, image2], axis=0)
     flag = sess.run(rank, feed_dict={image: inputs})
     return 1 if(flag>0) else -1
-
-
-
 
 
 def get_pic_old_ver(filename, sess):
@@ -94,4 +92,42 @@ def calculate_file2_oldver(filename2):
 
 
 if __name__ == "__main__":
-    print(evaluate())
+    anchor_path = ["../framework" + line.rstrip('\n').split(' ')[1] for line in
+                   open("F:/PycharmProjects/rank/framework/static/anchor/tid2013/tid2013.txt")]
+    num_of_anchor = 21
+    num_of_interval = num_of_anchor - 1
+    interval_down_threshold = [i*(100/num_of_interval) for i in range(num_of_interval)]
+    counter = np.zeros(num_of_interval)
+
+    #特征提取
+    inputs = []
+    calculate_file1("E:/database/tid2013/distorted_images/i22_01_4.bmp")
+    inputs.append(image1[0])
+    for i in range (num_of_anchor):
+        calculate_file1(anchor_path[i])
+        inputs.append(image1[0])
+    inputs = np.array(inputs)
+    features_ = sess.run(y_hat, feed_dict={image: inputs})
+    features = tf.convert_to_tensor(features_)
+    #排序
+    for i in range(num_of_anchor):
+        idx = i + 1
+        flag, _, _, _ = combine._combine(features[0], features[idx])
+        flag_ = sess.run(flag)
+        if flag_ >= 5:
+            for j in range(num_of_interval - i):
+                counter[i+j] += 1
+        elif flag_ <=-5:
+            for j in range(i):
+                counter[j] += 1
+
+    maxIdxList = []
+    curMaxIdx = 0
+    curMax = 0
+    for i in range(num_of_interval):
+        if (curMax <= counter[i]):
+            curMax = counter[i]
+            curMaxIdx = i
+
+    print(curMaxIdx *100/num_of_interval + 100/num_of_interval/2)
+    print(111)

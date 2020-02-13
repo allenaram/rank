@@ -19,6 +19,26 @@ from src.utils.logger import setup_logger
 import tensorflow as tf
 slim = tf.contrib.slim
 
+isFineTuning = True
+experiment_name = os.path.splitext(__file__.split('/')[-1])[0]
+db_base = 'E:/database'
+ckpt_base = os.path.abspath('..').replace('\\', '/') + "/experiments"
+data_root = db_base + "/tid2013/mosStd_with_names_ascend.txt" if isFineTuning \
+                                    else db_base + "/tid2013/mos_with_names_new.txt"
+
+modelName = "ResNet50"
+modelDict = {
+    "VGG16" : VggNetModel_NewVer,
+    "ResNet50" : ResNet50,
+    "ResNet50_2" : ResNet50
+}
+ckptPath = {
+    "VGG16" : ckpt_base + "/vgg_models/" + 'vgg16_weights.npz',
+
+    "ResNet50" : ckpt_base + "/tid2013_resnet50_hingeLoss/rankiqa/" + 'model.ckpt-9999'if isFineTuning
+        else ckpt_base + "/resnet_ckpt/" + 'resnet_v2_50.ckpt'
+}
+
 
 
 def str2bool(v):
@@ -29,21 +49,6 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Unsupported value encountered.')
 
-
-experiment_name = os.path.splitext(__file__.split('/')[-1])[0]
-BASE_PATH = 'E:/database'
-data_root = "E:/database/tid2013/mos_with_names_new.txt"
-
-modelName = "VGG16"
-modelDict = {
-    "VGG16" : VggNetModel_NewVer,
-    "ResNet50" : ResNet50
-}
-ckptPath = {
-    "VGG16" : os.path.abspath('..').replace('\\', '/') + "/experiments/vgg_models/" + 'vgg16_weights.npz',
-    "ResNet50" : os.path.abspath('..').replace('\\', '/') + "/experiments/resnet_ckpt/" + 'resnet_v2_50.ckpt'
-}
-
 # specifying default parameters
 def process_command_args():
     """
@@ -53,7 +58,7 @@ def process_command_args():
 
     ## Path related arguments
     parser.add_argument('--exp_name', type=str, default="rankiqa", help='experiment name')
-    parser.add_argument('--data_dir', type=str, default=BASE_PATH, help='the root path of dataset')
+    parser.add_argument('--data_dir', type=str, default=db_base, help='the root path of dataset')
     parser.add_argument('--train_list', type=str, default='live_train.txt', help='data list for read image.')
     parser.add_argument('--test_list', type=str, default='live_test.txt', help='data list for read image.')
     parser.add_argument('--ckpt_dir', type=str, default=os.path.abspath('..').replace('\\', '/') + '/experiments',
@@ -80,9 +85,9 @@ def process_command_args():
     parser.add_argument('--summary_step', type=int, default=10)
 
     ## optimization related arguments
-    parser.add_argument('--learning_rate', type=float, default=3e-5, help='init learning rate')
+    parser.add_argument('--learning_rate', type=float, default=1e-4, help='init learning rate')
     parser.add_argument('--dropout_keep_prob', type=float, default=0.7, help='keep neural node')
-    parser.add_argument('--iter_max', type=int, default=10000, help='the maxinum of iteration')
+    parser.add_argument('--iter_max', type=int, default=50000, help='the maxinum of iteration')
     parser.add_argument('--learning_rate_decay_factor', type=float, default=0.9)
     parser.add_argument('--weight_decay', type=float, default=4e-5)
 
@@ -111,16 +116,19 @@ def train(args):
             rank_loss = Rank_loss()
             loss = rank_loss.get_rankloss(y_hat, args.batch_size)
 
-        exclude = ["1x1conv1", "1x1conv2", "1x1conv3",
+        exclude = [] if isFineTuning else\
+            ["1x1conv1", "1x1conv2", "1x1conv3",
                    "combine_fc1", "combine_fc2", "combine_fc3",
                    'create_optimize','Adam'
-                    ]
+            ]
         variables_to_restore = slim.get_variables_to_restore(exclude=exclude)
         saver4read = tf.train.Saver(var_list=variables_to_restore, max_to_keep=2)
 
         with tf.name_scope("create_optimize"):
             # optimizer = tf.train.GradientDescentOptimizer(learning_rate=lr).minimize(loss)
             var_list = [v for v in tf.trainable_variables()]
+            var_list += [g for g in  tf.global_variables() if 'moving_mean' in g.name]
+            var_list += [g for g in tf.global_variables() if 'moving_variance' in g.name]
             optimizer = tf.train.AdamOptimizer(learning_rate=lr).minimize(loss, var_list=var_list)
 
         saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=2)
@@ -135,10 +143,10 @@ def train(args):
         summary_test = tf.summary.FileWriter(os.path.join(args.logs_dir, 'test').replace('\\', '/'),filename_suffix=args.exp_name)
 
         train_data = Dataset(
-            {'data_root':data_root,'im_shape':[224,224],'batch_size':45})
+            {'data_root':data_root,'im_shape':[224,224],'batch_size':45}, isFineTuning)
 
         test_data = Dataset(
-            {'data_root':data_root,'im_shape':[224,224],'batch_size':45})
+            {'data_root':data_root,'im_shape':[224,224],'batch_size':45}, isFineTuning)
 
     with tf.Session(graph=graph) as sess:
 
@@ -158,7 +166,7 @@ def train(args):
             # base_lr=(base_lr-base_lr*0.001)/args.iter_max*(args) # other learning rate modify
 
             image_batch, label_batch = train_data.next_batch()
-            loss_, _, _= sess.run([loss, optimizer, y_hat], feed_dict={imgs: image_batch, lr: base_lr,
+            dis1_, dis2_, loss_, _, _= sess.run([rank_loss.dis, rank_loss.dis2, loss, optimizer, y_hat], feed_dict={imgs: image_batch, lr: base_lr,
                                                               dropout_keep_prob: args.dropout_keep_prob})
 
 
