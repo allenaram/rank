@@ -4,7 +4,11 @@ Derived from: https://www.cs.toronto.edu/~frossard/vgg16/vgg16.py
 """
 import tensorflow as tf
 import numpy as np
+from nets import vgg
 from nets import resnet_v2
+from nets import inception
+from nets import inception_v3
+from nets.nasnet import nasnet
 slim = tf.contrib.slim
 
 
@@ -200,10 +204,11 @@ class VggNetModel(object):
 
 class VggNetModel_NewVer(object):
 
-    def __init__(self, num_classes=1000, dropout_keep_prob=0.5):
+    def __init__(self, num_classes=1000, dropout_keep_prob=0.5, isFineTuning = False):
         self.num_classes = num_classes
         self.dropout_keep_prob = dropout_keep_prob
         self.feature =None
+        self.isFineTuning = isFineTuning
 
     def inference(self, x, training=False):
         # conv1_1
@@ -405,31 +410,69 @@ class VggNetModel_NewVer(object):
         var_list = [v for v in tf.trainable_variables() if v.name.split('/')[0] in train_layers]
         return tf.train.AdamOptimizer(learning_rate).minimize(self.loss, var_list=var_list)
 
-    def load_original_weights(self, session,vgg_models_path, skip_layers=[]):
-        weights = np.load(vgg_models_path)
-        keys = sorted(weights.keys())
+    def load_original_weights(self, session, vgg_models_path, saver, skip_layers=[]):
+        if not self.isFineTuning:
+            weights = np.load(vgg_models_path)
+            keys = sorted(weights.keys())
 
-        for i, name in enumerate(keys):
-            parts = name.split('_')
-            layer = '_'.join(parts[:-1])
+            for i, name in enumerate(keys):
+                parts = name.split('_')
+                layer = '_'.join(parts[:-1])
 
-            # if layer in skip_layers:
-            #     continue
+                # if layer in skip_layers:
+                #     continue
 
-            if layer == 'fc8' and self.num_classes != 1000:
-                continue
+                if layer == 'fc8' and self.num_classes != 1000:
+                    continue
 
-            with tf.variable_scope(layer, reuse=True):
-                if parts[-1] == 'W':
-                    var = tf.get_variable('weights')
-                    session.run(var.assign(weights[name]))
-                elif parts[-1] == 'b':
-                    var = tf.get_variable('biases')
-                    session.run(var.assign(weights[name]))
+                with tf.variable_scope(layer, reuse=True):
+                    if parts[-1] == 'W':
+                        var = tf.get_variable('weights')
+                        session.run(var.assign(weights[name]))
+                    elif parts[-1] == 'b':
+                        var = tf.get_variable('biases')
+                        session.run(var.assign(weights[name]))
+        else:
+            saver.restore(session, vgg_models_path)
+
+
+class Vgg16(object):
+    def __init__(self, num_classes=1000, dropout_keep_prob=0.5, isFineTuning = False):
+        self.num_classes = num_classes
+        self.dropout_keep_prob = dropout_keep_prob
+
+    def inference(self, x, training=False):
+        with slim.arg_scope(vgg.vgg_arg_scope()):
+            _, end_points = vgg.vgg_16(x, 1000, is_training=True)
+
+        with tf.variable_scope('1x1conv1') as scope:
+            kernel = tf.get_variable('weights',
+                                     initializer=tf.truncated_normal([1, 1, 4096, 512], dtype=tf.float32,
+                                                                     stddev=1e-1))
+            conv = tf.nn.conv2d(end_points["vgg_16/fc6"], kernel, [1, 1, 1, 1], padding='VALID')
+            biases = tf.get_variable('biases', initializer=tf.constant(0.0, shape=[512], dtype=tf.float32))
+            out = tf.nn.bias_add(conv, biases)
+            conv1x1_1 = tf.nn.relu(out, name=scope.name)
+
+        # 1x1 conv2
+        with tf.variable_scope('1x1conv2') as scope:
+            kernel = tf.get_variable('weights',
+                                     initializer=tf.truncated_normal([1, 1, 512, 128], dtype=tf.float32,
+                                                                     stddev=1e-1))
+            conv = tf.nn.conv2d(conv1x1_1, kernel, [1, 1, 1, 1], padding='VALID')
+            biases = tf.get_variable('biases', initializer=tf.constant(0.0, shape=[128], dtype=tf.float32))
+            out = tf.nn.bias_add(conv, biases)
+            out = tf.nn.relu(out, name=scope.name)
+            out = tf.reshape(out, [-1, 128])
+
+        return out
+
+    def load_original_weights(self, session,ckpt_path, saver, skip_layers=[]):
+        saver.restore(session, ckpt_path)
 
 
 class ResNet50(object):
-    def __init__(self, num_classes=1000, dropout_keep_prob=0.5):
+    def __init__(self, num_classes=1000, dropout_keep_prob=0.5, isFineTuning = False):
         self.num_classes = num_classes
         self.dropout_keep_prob = dropout_keep_prob
 
@@ -475,6 +518,50 @@ class ResNet50(object):
 
 
 class InceptionV3(object):
-    def __init__(self, num_classes=1000, dropout_keep_prob=0.5):
+    def __init__(self, num_classes=1000, dropout_keep_prob=0.5, isFineTuning = False):
         self.num_classes = num_classes
         self.dropout_keep_prob = dropout_keep_prob
+        self.isFineTuning = isFineTuning
+
+
+    def inference(self, x, training = False):
+        with slim.arg_scope(inception_v3.inception_v3_arg_scope()):
+            logits, end_points = inception.inception_v3(x, 1001, training, create_aux_logits=False,)
+
+        with tf.variable_scope('1x1conv1') as scope:
+            kernel = tf.get_variable('weights',
+                                     initializer=tf.truncated_normal([1, 1, 2048, 128], dtype=tf.float32,
+                                                                     stddev=1e-1))
+            conv = tf.nn.conv2d(end_points["AvgPool_1a"], kernel, [1, 1, 1, 1], padding='VALID')
+            biases = tf.get_variable('biases', initializer=tf.constant(0.0, shape=[128], dtype=tf.float32))
+            out = tf.nn.bias_add(conv, biases)
+            out = tf.reshape(out, [-1, 128])
+
+        return out
+
+    def load_original_weights(self, session,ckpt_path, saver, skip_layers=[]):
+        saver.restore(session, ckpt_path)
+
+
+class NasNet_Mobile(object):
+    def __init__(self, num_classes=1000, dropout_keep_prob=0.5, isFineTuning = False):
+        self.num_classes = num_classes
+        self.dropout_keep_prob = dropout_keep_prob
+        self.isFineTuning = isFineTuning
+
+
+    def inference(self, x, training = False):
+        with slim.arg_scope(nasnet.nasnet_mobile_arg_scope()):
+            logits, end_points = nasnet.build_nasnet_mobile(x, 1001, is_training = training)
+
+        with tf.variable_scope('finalFC') as scope:
+            w = tf.get_variable('weights',
+                                   initializer=tf.truncated_normal([1056, 128], dtype=tf.float32,
+                                                                   stddev=0.1))
+            b = tf.get_variable('biases', initializer=tf.constant(1.0, shape=[128], dtype=tf.float32))
+            out = tf.nn.bias_add(tf.matmul(end_points["global_pool"], w), b)
+
+        return out#tf.nn.softmax(end_points["AuxLogits"])
+
+    def load_original_weights(self, session,ckpt_path, saver, skip_layers=[]):
+        saver.restore(session, ckpt_path)

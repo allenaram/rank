@@ -5,6 +5,8 @@ import argparse
 import os
 import time
 from datetime import datetime
+from functools import reduce
+from operator import mul
 
 import sys
 sys.path.append('../')
@@ -12,7 +14,10 @@ sys.path.append('../')
 from src.datasets.rank_dataloader import Dataset
 from src.loss.rank_loss import Rank_loss
 from src.net.model import VggNetModel_NewVer
+from src.net.model import Vgg16
 from src.net.model import ResNet50
+from src.net.model import InceptionV3
+from src.net.model import NasNet_Mobile
 from src.utils.checkpoint import save
 from src.utils.logger import setup_logger
 
@@ -23,20 +28,31 @@ isFineTuning = True
 experiment_name = os.path.splitext(__file__.split('/')[-1])[0]
 db_base = 'E:/database'
 ckpt_base = os.path.abspath('..').replace('\\', '/') + "/experiments"
-data_root = db_base + "/tid2013/mosStd_with_names_ascend.txt" if isFineTuning \
+data_root = db_base + "/tid2013/mosStd_with_names_4_descend.txt" if isFineTuning \
                                     else db_base + "/tid2013/mos_with_names_new.txt"
 
 modelName = "ResNet50"
 modelDict = {
-    "VGG16" : VggNetModel_NewVer,
+    "VGG16" : Vgg16,
     "ResNet50" : ResNet50,
-    "ResNet50_2" : ResNet50
+    "InceptionV3" : InceptionV3,
+    "NasNet" : NasNet_Mobile,
+    "test" : ResNet50,
 }
 ckptPath = {
-    "VGG16" : ckpt_base + "/vgg_models/" + 'vgg16_weights.npz',
+    "VGG16" : ckpt_base + "/tid2013_vgg16_BiLoss/rankiqa/" + 'model.ckpt-9999' if isFineTuning
+        else ckpt_base + "/vgg_ckpt/" + 'vgg_16.ckpt',
 
-    "ResNet50" : ckpt_base + "/tid2013_resnet50_hingeLoss/rankiqa/" + 'model.ckpt-9999'if isFineTuning
-        else ckpt_base + "/resnet_ckpt/" + 'resnet_v2_50.ckpt'
+    "ResNet50" : ckpt_base + "/tid2013_resnet50_BiLoss/rankiqa/" + 'model.ckpt-9999'if isFineTuning
+        else ckpt_base + "/resnet_ckpt/" + 'resnet_v2_50.ckpt',
+
+    "InceptionV3" : ckpt_base + "/tid2013_inceptionv3_BiLoss/rankiqa/" + 'model.ckpt-9999'if isFineTuning
+        else ckpt_base + "/inceptionV3_ckpt/" + 'inception_v3.ckpt',
+
+    "NasNet" : ckpt_base + "/tid2013_nasnet_BiLoss/rankiqa/" + 'model.ckpt-9999'if isFineTuning
+        else ckpt_base + "/nasnet_ckpt/" + 'model.ckpt',
+    
+    'test' : 'F:/PycharmProjects/rank/experiments/tid2013_resnet50_hingeLoss_ft/rankiqa/model.ckpt-49999'
 }
 
 
@@ -66,7 +82,7 @@ def process_command_args():
     parser.add_argument('--logs_dir', type=str, default=os.path.abspath('..').replace('\\', '/') + '/experiments',
                         help='the path of tensorboard logs')
     parser.add_argument('--model_path', type=str,
-                        default=os.path.abspath('..').replace('\\', '/') + "/experiments/vgg_models/" + 'vgg16_weights.npz')
+                        default=os.path.abspath('..').replace('\\', '/') + "/experiments/vgg_ckpt/" + 'vgg16_weights.npz')
     ## models retated argumentss
     parser.add_argument('--save_ckpt_file', type=str2bool, default=True,
                         help="whether to save trained checkpoint file ")
@@ -95,6 +111,14 @@ def process_command_args():
     return args
 
 
+def get_num_params():
+    num_params = 0
+    for variable in tf.trainable_variables():
+        shape = variable.get_shape()
+        num_params += reduce(mul, [dim.value for dim in shape], 1)
+    return num_params
+
+
 def train(args):
     global logger
     #print(logger)
@@ -109,20 +133,25 @@ def train(args):
         lr = tf.placeholder(tf.float32, [])
 
         #with tf.name_scope("create_models"):
-        model = modelDict[modelName](num_classes=1, dropout_keep_prob=dropout_keep_prob)
+        model = modelDict[modelName](num_classes=1, dropout_keep_prob=dropout_keep_prob, isFineTuning = isFineTuning)
         y_hat = model.inference(imgs, True)
 
         with tf.name_scope("create_loss"):
             rank_loss = Rank_loss()
             loss = rank_loss.get_rankloss(y_hat, args.batch_size)
 
+
+
+
         exclude = [] if isFineTuning else\
             ["1x1conv1", "1x1conv2", "1x1conv3",
                    "combine_fc1", "combine_fc2", "combine_fc3",
-                   'create_optimize','Adam'
+                   'create_optimize','Adam', 'InceptionV3/Logits', 'finalFC', 'aux_7', 'AuxLogits', 'Logits','final_layer'
             ]
         variables_to_restore = slim.get_variables_to_restore(exclude=exclude)
         saver4read = tf.train.Saver(var_list=variables_to_restore, max_to_keep=2)
+
+        print('参数数量： '+ str(get_num_params()))
 
         with tf.name_scope("create_optimize"):
             # optimizer = tf.train.GradientDescentOptimizer(learning_rate=lr).minimize(loss)
@@ -143,10 +172,10 @@ def train(args):
         summary_test = tf.summary.FileWriter(os.path.join(args.logs_dir, 'test').replace('\\', '/'),filename_suffix=args.exp_name)
 
         train_data = Dataset(
-            {'data_root':data_root,'im_shape':[224,224],'batch_size':45}, isFineTuning)
+            {'data_root':data_root,'im_shape':[args.crop_height, args.crop_width],'batch_size': 25}, isFineTuning)
 
         test_data = Dataset(
-            {'data_root':data_root,'im_shape':[224,224],'batch_size':45}, isFineTuning)
+            {'data_root':data_root,'im_shape':[args.crop_height,args.crop_width],'batch_size':25}, isFineTuning)
 
     with tf.Session(graph=graph) as sess:
 

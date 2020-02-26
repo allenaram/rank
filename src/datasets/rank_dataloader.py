@@ -12,6 +12,7 @@ class Dataset():
         self.param_str = param_str
         self.batch_size = self.param_str['batch_size']
         self.data_root = self.param_str['data_root']
+        self.img_size = self.param_str['im_shape']
 
         # 获取图像索引列表.
         filename = [line.rstrip('\n') for line in open(self.data_root)]
@@ -45,16 +46,16 @@ class Dataset():
 
     def _get_next_minibatch_inds_ft(self):
         # mini_batch = level * dis_mini * batch
-        sampleTarget = [i for i in range(1125)]
+        sampleTarget = [i for i in range(625)]
         db_inds = []
-        dis = 9  # 失真类型数量
+        dis = 5  # 失真类型数量
         batch = 1  # 一个minibatch中原图的数量
         level = 5  # 失真等级数量
         Num = len(self.scores) / dis / level  # 原图数量
         for k in range(dis):
             idxList = random.sample(sampleTarget, level)
             idxList.sort()
-            idxList.reverse()
+            #idxList.reverse()
             db_inds += idxList
         self.num = self.num + batch
         if Num - self.num < batch:
@@ -64,14 +65,15 @@ class Dataset():
 
     def get_minibatch(self, minibatch_db):
         # 给定一个roidb，构建一个从中取样的小批量
-        jobs = [preprocess('E:/database/tid2013/distorted_images/'+i) for i in minibatch_db]
+        jobs = [preprocess('E:/database/tid2013/distorted_images/'+i, self.img_size) for i in minibatch_db]
         index = 0
-        images_train = np.zeros([self.batch_size, 224, 224 ,3], np.float32)
+        images_train = np.zeros([self.batch_size, self.img_size[0], self.img_size[0] ,3], np.float32)
+        images_class = np.array([float(i[5]) for i in minibatch_db])
         for index_job in range(len(jobs)):
             images_train[index] = jobs[index_job]
             index += 1
         #images_train = random.sample(jobs, self.batch_size)
-        blobs = {'data': images_train}
+        blobs = {'data': images_train, 'class' : images_class}
         return blobs
 
     def next_batch(self):
@@ -89,8 +91,8 @@ class Dataset():
         #print(blobs['label'])
         return blobs['data'],blobs['label']
 
-def preprocess(data):
-    sp = 224
+def preprocess(data, img_size):
+    sp = img_size[0]
     im = np.asarray(cv2.imread(data))
     x = im.shape[0]
     y = im.shape[1]
